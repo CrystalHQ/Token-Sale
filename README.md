@@ -1,2 +1,2 @@
 # crowdfund
-Crystal crowd fund contracts and site
+Crystal token sale contracts and site
