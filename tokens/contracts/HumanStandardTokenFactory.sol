@@ -8,7 +8,7 @@ contract HumanStandardTokenFactory {
 
     function HumanStandardTokenFactory() {
       //upon creation of the factory, deploy a HumanStandardToken (parameters are meaningless) and store the bytecode provably.
-      address verifiedToken = createHumanStandardToken(10000, "Verify Token", 3, "VTX");
+      address verifiedToken = createHumanStandardToken(10000, "Crystal", 3, "CRS");
       humanStandardByteCode = codeAt(verifiedToken);
     }
 
@@ -50,10 +50,12 @@ contract HumanStandardTokenFactory {
     }
 
     function createHumanStandardToken(uint256 _initialAmount, string _name, uint8 _decimals, string _symbol) returns (address) {
-
         HumanStandardToken newToken = (new HumanStandardToken(_initialAmount, _name, _decimals, _symbol));
         created[msg.sender].push(address(newToken));
         isHumanToken[address(newToken)] = true;
+        //our CrowdFund contract will call createHumanStandardToken. As the meg.sender
+        //the CrowdFund contract will have ownership of tokens. It will issue/transfer them when receiving ETH into the fund
+        //based on the CrowdFund rules.
         newToken.transfer(msg.sender, _initialAmount); //the factory will own the created tokens. You must transfer them.
         return address(newToken);
     }

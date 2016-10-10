@@ -3,7 +3,7 @@
 
 contract token { function transfer(address receiver, uint amount){  } }
 
-contract Crowdsale {
+contract CrowdFund {
     address public beneficiary;
     uint public fundingGoal; uint public amountRaised; uint public deadline; uint public price;
     token public tokenReward;
@@ -16,7 +16,7 @@ contract Crowdsale {
     /* data structure to hold information about campaign contributors */
 
     /*  at initialization, setup the owner */
-    function Crowdsale(
+    function CrowdFund(
         address ifSuccessfulSendTo,
         uint fundingGoalInEthers,
         uint durationInMinutes,
