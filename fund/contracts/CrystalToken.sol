@@ -1,3 +1,9 @@
+/* Forked From https://github.com/Firstbloodio/token
+
+This is the Crystal token and token sale contract. This will handle all backend aspects of our token sale.
+*/
+
+
 /**
  * Overflow aware uint math functions.
  *
