@@ -1,8 +1,13 @@
-/* Forked From https://github.com/Firstbloodio/token
+/* Forked From https://github.com/FirstBloodio/token
 
 This is the Crystal token and token sale contract. This will handle all backend aspects of our token sale.
 */
-
+//@todo - Can this be reworked in an Augur style auction? Or do we need to start from scratch.
+//@todo - How do we deal with founder donations instead of founder allocations. Do we need to start from scratch?
+          //@todo - How do we deal with timed release for founder dontations.
+//@todo - How do we deal with pre-allocations for advisors,etc.
+        //@todo - How do we deal with time release for pre-allocations
+//@todo - Adding a minimum for funding, returning funds if not reached.
 
 /**
  * Overflow aware uint math functions.
@@ -137,16 +142,17 @@ contract StandardToken is Token {
 
 
 /**
- * First blood token sale ICO contract.
+ * Crystal token sale contract.
  *
  * Security criteria evaluated against http://ethereum.stackexchange.com/questions/8551/methodological-security-review-of-a-smart-contract
  *
  *
  */
-contract FirstBloodToken is StandardToken, SafeMath {
+contract CrystalToken is StandardToken, SafeMath {
 
-    string public name = "FirstBlood Token";
-    string public symbol = "1ST";
+    string public name = "Crystal Token";
+    //@todo - Come up with name for Crystal tokens
+    string public symbol = "CRS";
     uint public decimals = 18;
     uint public startBlock; //token sale start block (set in constructor)
     uint public endBlock; //token sale end block (set in constructor)
@@ -160,9 +166,11 @@ contract FirstBloodToken is StandardToken, SafeMath {
     // see function() {} for comments
     address public signer = 0x0;
 
+/* Constants*/
     uint public etherCap = 500000 * 10**18; //max amount raised during token sale (5.5M USD worth of ether will be measured with market price at beginning of the token sale)
     uint public transferLockup = 370285; //transfers are locked for this many blocks after endBlock (assuming 14 second blocks, this is 2 months)
     uint public founderLockup = 2252571; //founder allocation cannot be created until this many blocks after endBlock (assuming 14 second blocks, this is 1 year)
+    //@todo - Remove bounty code
     uint public bountyAllocation = 2500000 * 10**18; //2.5M tokens allocated post-token sale for the bounty fund
     uint public ecosystemAllocation = 5 * 10**16; //5% of token supply allocated post-token sale for the ecosystem fund
     uint public founderAllocation = 10 * 10**16; //10% of token supply allocated post-token sale for the founder allocation
@@ -177,7 +185,7 @@ contract FirstBloodToken is StandardToken, SafeMath {
     event AllocateFounderTokens(address indexed sender);
     event AllocateBountyAndEcosystemTokens(address indexed sender);
 
-    function FirstBloodToken(address founderInput, address signerInput, uint startBlockInput, uint endBlockInput) {
+    function CrystalToken(address founderInput, address signerInput, uint startBlockInput, uint endBlockInput) {
         founder = founderInput;
         signer = signerInput;
         startBlock = startBlockInput;
@@ -189,9 +197,10 @@ contract FirstBloodToken is StandardToken, SafeMath {
      *
      * - Integer overflow: does not apply, blocknumber can't grow that high
      * - Division is the last operation and constant, should not cause issues
-     * - Price function plotted https://github.com/Firstbloodio/token/issues/2
+     * - Price function plotted https://github.com/Crystalio/token/issues/2
      */
     function price() constant returns(uint) {
+        //@todo - Figure out if we want power hour.
         if (block.number>=startBlock && block.number<startBlock+250) return 170; //power hour
         if (block.number<startBlock || block.number>endBlock) return 100; //default price
         return 100 + 4*(endBlock - block.number)/(endBlock - startBlock + 1)*67/4; //token sale price
@@ -272,6 +281,7 @@ contract FirstBloodToken is StandardToken, SafeMath {
         AllocateFounderTokens(msg.sender);
     }
 
+/* Bounty and Ecosystem Tokens - @todo Should we delete this? */
     /**
      * Set up founder address token balance.
      *
@@ -302,6 +312,7 @@ contract FirstBloodToken is StandardToken, SafeMath {
         AllocateBountyAndEcosystemTokens(msg.sender);
     }
 
+/*Contract Escape Hatch*/
     /**
      * Emergency Stop ICO.
      *
@@ -357,6 +368,7 @@ contract FirstBloodToken is StandardToken, SafeMath {
         return super.transferFrom(_from, _to, _value);
     }
 
+/* Check for signing agreement*/
     /**
      * Do not allow direct deposits.
      *
