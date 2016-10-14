@@ -137,7 +137,7 @@ contract StandardToken is Token {
 
 
 /**
- * First blood crowdsale ICO contract.
+ * First blood token sale ICO contract.
  *
  * Security criteria evaluated against http://ethereum.stackexchange.com/questions/8551/methodological-security-review-of-a-smart-contract
  *
@@ -148,8 +148,8 @@ contract FirstBloodToken is StandardToken, SafeMath {
     string public name = "FirstBlood Token";
     string public symbol = "1ST";
     uint public decimals = 18;
-    uint public startBlock; //crowdsale start block (set in constructor)
-    uint public endBlock; //crowdsale end block (set in constructor)
+    uint public startBlock; //token sale start block (set in constructor)
+    uint public endBlock; //token sale end block (set in constructor)
 
     // Initial founder address (set in constructor)
     // All deposited ETH will be instantly forwarded to this address.
@@ -160,18 +160,18 @@ contract FirstBloodToken is StandardToken, SafeMath {
     // see function() {} for comments
     address public signer = 0x0;
 
-    uint public etherCap = 500000 * 10**18; //max amount raised during crowdsale (5.5M USD worth of ether will be measured with market price at beginning of the crowdsale)
+    uint public etherCap = 500000 * 10**18; //max amount raised during token sale (5.5M USD worth of ether will be measured with market price at beginning of the token sale)
     uint public transferLockup = 370285; //transfers are locked for this many blocks after endBlock (assuming 14 second blocks, this is 2 months)
     uint public founderLockup = 2252571; //founder allocation cannot be created until this many blocks after endBlock (assuming 14 second blocks, this is 1 year)
-    uint public bountyAllocation = 2500000 * 10**18; //2.5M tokens allocated post-crowdsale for the bounty fund
-    uint public ecosystemAllocation = 5 * 10**16; //5% of token supply allocated post-crowdsale for the ecosystem fund
-    uint public founderAllocation = 10 * 10**16; //10% of token supply allocated post-crowdsale for the founder allocation
+    uint public bountyAllocation = 2500000 * 10**18; //2.5M tokens allocated post-token sale for the bounty fund
+    uint public ecosystemAllocation = 5 * 10**16; //5% of token supply allocated post-token sale for the ecosystem fund
+    uint public founderAllocation = 10 * 10**16; //10% of token supply allocated post-token sale for the founder allocation
     bool public bountyAllocated = false; //this will change to true when the bounty fund is allocated
     bool public ecosystemAllocated = false; //this will change to true when the ecosystem fund is allocated
     bool public founderAllocated = false; //this will change to true when the founder fund is allocated
-    uint public presaleTokenSupply = 0; //this will keep track of the token supply created during the crowdsale
-    uint public presaleEtherRaised = 0; //this will keep track of the Ether raised during the crowdsale
-    bool public halted = false; //the founder address can set this to true to halt the crowdsale due to emergency
+    uint public presaleTokenSupply = 0; //this will keep track of the token supply created during the token sale
+    uint public presaleEtherRaised = 0; //this will keep track of the Ether raised during the token sale
+    bool public halted = false; //the founder address can set this to true to halt the token sale due to emergency
     event Buy(address indexed sender, uint eth, uint fbt);
     event Withdraw(address indexed sender, address to, uint eth);
     event AllocateFounderTokens(address indexed sender);
@@ -194,14 +194,14 @@ contract FirstBloodToken is StandardToken, SafeMath {
     function price() constant returns(uint) {
         if (block.number>=startBlock && block.number<startBlock+250) return 170; //power hour
         if (block.number<startBlock || block.number>endBlock) return 100; //default price
-        return 100 + 4*(endBlock - block.number)/(endBlock - startBlock + 1)*67/4; //crowdsale price
+        return 100 + 4*(endBlock - block.number)/(endBlock - startBlock + 1)*67/4; //token sale price
     }
 
     // price() exposed for unit tests
     function testPrice(uint blockNumber) constant returns(uint) {
         if (blockNumber>=startBlock && blockNumber<startBlock+250) return 170; //power hour
         if (blockNumber<startBlock || blockNumber>endBlock) return 100; //default price
-        return 100 + 4*(endBlock - blockNumber)/(endBlock - startBlock + 1)*67/4; //crowdsale price
+        return 100 + 4*(endBlock - blockNumber)/(endBlock - startBlock + 1)*67/4; //token sale price
     }
 
     // Buy entry point
@@ -360,10 +360,10 @@ contract FirstBloodToken is StandardToken, SafeMath {
     /**
      * Do not allow direct deposits.
      *
-     * All crowdsale depositors must have read the legal agreement.
+     * All token sale depositors must have read the legal agreement.
      * This is confirmed by having them signing the terms of service on the website.
-     * The give their crowdsale Ethereum source address on the website.
-     * Website signs this address using crowdsale private key (different from founders key).
+     * They give their token sale Ethereum source address on the website.
+     * Website signs this address using token sale private key (different from founders key).
      * buy() takes this signature as input and rejects all deposits that do not have
      * signature you receive after reading terms of service.
      *
