@@ -206,28 +206,33 @@ contract VerityClearToken is StandardToken, SafeMath {
     address public signer = 0x0;
 
 /* Constants*/
-    uint public etherCap = 500000 * 10**18; //max amount raised during token sale (5.5M USD worth of ether will be measured with market price at beginning of the token sale)
+    uint public maxMarketCapInEther = 10 * 10**5; // 1,000,000 max ether we will take in before ending sale early, aprox 12M USD
+    uint public fixedTokenSupply = 10 * 10**7; //100,000,000 this is the total token supply created on contract deployment.
     uint public transferLockup = 370285; //transfers are locked for this many blocks after endBlock (assuming 14 second blocks, this is 2 months)
     uint public founderLockup = 2252571; //founder allocation cannot be created until this many blocks after endBlock (assuming 14 second blocks, this is 1 year)
-    uint public founderAllocation = 10 * 10**16; //10% of token supply allocated post-token sale for the founder allocation
-    bool public founderAllocated = false; //this will change to true when the founder fund is allocated
-    bool public buyersAllocated = false; //this will change to true when the buyers tokens are allocated
-    uint public fixedTokenSupply = 0; //this will keep track of the token supply created during the token sale
+    bool public founderDistributed = false; //this will change to true when the founder tokens are distributed
+    bool public buyersDistributed = false; //this will change to true when the buyers tokens are distributed
     uint public totalFunded = 0; //this will keep track of the Ether raised during the token sale
     bool public halted = false; //the foundation address can set this to true to halt the token sale due to emergency
+
+
+    //@todo  ok to store percent in uint? how do we get precision we need?
+    mapping(address => uint) founderPercents;
+
     event BuyEvent(address indexed sender, uint eth, uint fbt);
     //@todo dead code, Withdraw event unused ?
     event Withdraw(address indexed sender, address to, uint eth);
-    event AllocateFounderTokensEvent(address indexed sender);
-    event AllocateBuyersTokensEvent(address indexed sender);
-    event AllocateBountyAndEcosystemTokens(address indexed sender);
+    event DistributeFounderTokensEvent(address indexed sender);
+    event DistributeBuyersTokensEvent(address indexed sender);
+    event SetFounderPercentEvent(address indexed sender);
 
-    //for testing a single account instead of a multisig will do
+    //for testing - a single account instead of a multisig will do
     function VerityClearToken(address foundationInputMultiSig, address signerInput, uint startBlockInput, uint endBlockInput) {
         foundation = foundationInputMultiSig;
         signer = signerInput;
         startBlock = startBlockInput;
         endBlock = endBlockInput;
+        totalSupply = fixedTokenSupply;
     }
 
     /**
@@ -237,15 +242,15 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Division is the last operation and constant, should not cause issues
      * - Price function plotted https://github.com/firstbloodio/token/issues/2
      */
-    function price() constant returns(uint) {
+    function discount() constant returns(uint) {
         //@todo - Figure out if we want power hour.
         if (block.number>=startBlock && block.number<startBlock+250) return 170; //power hour
         if (block.number<startBlock || block.number>endBlock) return 100; //default price
         return 100 + 4*(endBlock - block.number)/(endBlock - startBlock + 1)*67/4; //token sale price
     }
 
-    // price() exposed for unit tests
-    function testPrice(uint blockNumber) constant returns(uint) {
+    // discount() exposed for unit tests
+    function testDiscount(uint blockNumber) constant returns(uint) {
         if (blockNumber>=startBlock && blockNumber<startBlock+250) return 170; //power hour
         if (blockNumber<startBlock || blockNumber>endBlock) return 100; //default price
         return 100 + 4*(endBlock - blockNumber)/(endBlock - startBlock + 1)*67/4; //token sale price
@@ -281,11 +286,11 @@ contract VerityClearToken is StandardToken, SafeMath {
         if (ecrecover(hash,v,r,s) != signer) throw;
         if (block.number<startBlock
           || block.number>endBlock
-          || safeAdd(totalFunded,msg.value)>etherCap
+          || safeAdd(totalFunded,msg.value)>maxMarketCapInEther
           || halted) throw;
 
         //under our new model, this will happen upon distribution, at end of ICO
-        uint tokens = safeMul(msg.value, price());
+        uint tokens = safeMul(msg.value, discount());
         balances[recipient] = safeAdd(balances[recipient], tokens);
 
         //totalSupply will be fixed in our auction style buying
@@ -293,7 +298,6 @@ contract VerityClearToken is StandardToken, SafeMath {
 
         //this will be total funded
         totalFunded = safeAdd(totalFunded, msg.value);
-
 
         // TODO: Is there a pitfall of forwarding message value like this
         // TODO: Different address for founder deposits and founder operations (halt, unhalt)
@@ -305,7 +309,7 @@ contract VerityClearToken is StandardToken, SafeMath {
     /**
      * Distribute token balance for all buyers.
      * Performed once at end of ICO / Auction
-     * allocateFounderTokens() must be calld first.
+     * distributeFounderTokens() must be calld first.
      *
      *  Security not reviewed
      *   todo - review: Integer divisions are always rounded down
@@ -315,12 +319,12 @@ contract VerityClearToken is StandardToken, SafeMath {
      *    boundries for math / division. What is precision limit ?
      *
      */
-    function allocateBuyersTokens() {
+    function distributeBuyersTokens() {
         if (msg.sender!=foundation) throw;
         if (block.number <= endBlock + founderLockup) throw;
         //if (fundedAmt < MINIMUM_FUND_CAP) throw;
-        if (buyersAllocated) throw;
-        if (!founderAllocated) throw;
+        if (buyersDistributed) throw;
+        if (!founderDistributed) throw;
 
         // foreach buyer
         // balances[buyer] = TOKEN_SUPPLY_CAP * ( funded[buyer] / safeAdd(totalFunded + totalGifted) );
@@ -328,31 +332,40 @@ contract VerityClearToken is StandardToken, SafeMath {
         // old example code...
         // balances[founder] = safeAdd(balances[founder], presaleTokenSupply * founderAllocation / (1 ether));
         // totalSupply = safeAdd(totalSupply, presaleTokenSupply * founderAllocation / (1 ether));
-        buyersAllocated = true;
-        AllocateBuyersTokensEvent(msg.sender);
+        buyersDistributed = true;
+        DistributeBuyersTokensEvent(msg.sender);
     }
 
-    function allocateFounderPercent(address recipient, uint percent) {
+    function setFounderPercent(address founder, uint percent) {
         if(msg.sender!=foundation) throw;
         if(block.number<startBlock) throw;
         if(percent + percentOthers > 100) throw;
+        founderPercents[founder] = percent;
+        percentOthers = percentOthers + percent;
+        SetFounderPercentEvent(msg.sender);
     }
 
-    function allocateFounderTokens() {
+
+    function distributeFounderTokens() {
+        uint percentTotal;
         if (msg.sender!=foundation) throw;
         if (block.number <= endBlock + founderLockup) throw;
         //if (fundedAmt < MINIMUM_FUND_CAP) throw;
-        if (!buyersAllocated) throw;
-        if (!founderAllocated) throw;
+        if (!buyersDistributed) throw;
+        if (!founderDistributed) throw;
+        // foreach founder
+        // percentTotal = percentTotal + founderPercents[founder];
+        // if (percentTotal != 100) throw;
 
         // foreach founder
-        // balances[founder] = TOKEN_SUPPLY_CAP * ( (totalGifted * founderPercents[founder]) / safeAdd(totalFunded + totalGifted) );
+        // real founderPercent = founderPercents[founder]/100;
+        // balances[founder] = TOKEN_SUPPLY_CAP * ( (totalGifted * founderPercent) / safeAdd(totalFunded + totalGifted) );
 
         // old example code...
         // balances[founder] = safeAdd(balances[founder], presaleTokenSupply * founderAllocation / (1 ether));
         // totalSupply = safeAdd(totalSupply, presaleTokenSupply * founderAllocation / (1 ether));
-        founderAllocated = true;
-        AllocateFounderTokensEvent(msg.sender);
+        founderDistributed = true;
+        DistributeFounderTokensEvent(msg.sender);
     }
 
 /*Contract Escape Hatch*/
@@ -381,7 +394,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Test founder change by hacker
      * - Test founder change
      * - Test founder token allocation twice
-     *
+     */
     function changeFounder(address newFounder) {
         if (msg.sender!=foundation) throw;
         founder = newFounder;
