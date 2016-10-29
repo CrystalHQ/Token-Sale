@@ -1,13 +1,52 @@
 /* Forked From https://github.com/FirstBloodio/token
 
-This is the Crystal token and token sale contract. This will handle all backend aspects of our token sale.
+This is the VerityClear token and token sale contract. This will handle all backend aspects of our token sale.
+
+Security review should be at minimum performed by reputable third parties
+per best practices enumerated here: https://github.com/ConsenSys/smart-contract-best-practices
 */
-//@todo - Can this be reworked in an Augur style auction? Or do we need to start from scratch.
+
+//@todo - Distribution of funds per Augur style auction:
+    //Instead of setting a price per VerityClear minting tokens when purchased,
+    // we want to allocate the total VerityClear (TOTALQTY) and let the market price the VerityClear
+    // see: How does the live-action model work? http://augur.strikingly.com/blog/the-augur-crowdsale
+    // basically each buyer buys some fraction of the TOKEN_SUPPLY_CAP number of tokens which
+    // will be calculated by (PURCHASER_AMT / TOTALFUNDED) * TOKEN_SUPPLY_CAP
+    // Buy will be for quantity to equal purchased value at final valuation, not X qty.
+    // The buyer will buy a fraction of total tokens
+    // based on the amount they purchased as the denominator under the total fund at closing.
+    // So we only need to keep track of how much was sent and TOKEN_SUPPLY_CAP/BUYER_AMT will give us the senders percent of tokens.
+    // This calculation need only be performd upon final ditsribution at the end of ICO.
+    // If we want to update a web page or other UI during the sale we can calculate using
+    // metrics pulled from events or maybe allow the contract to be queried for totalfund / number purchasers
+
 //@todo - How do we deal with founder donations instead of founder allocations. Do we need to start from scratch?
-          //@todo - How do we deal with timed release for founder dontations.
+  // under the auction model above we allow a percentage to be donated to the founders. We just further split the pie
+  // by the founder percent. Default gift to founders can be overridden during purchase.
+  // Default to some sane amount like 10% (needs research)
+  // One way to do this is to issue to founders the matching funds in units of ether,
+  // but do not use real ether but 'gift ether'. Then the market valuation will be inflated, diluting the pie, and
+  // issuing tokens to founders at the close based on the 'gift ether'.
+
+//@todo - How do we deal with timed release for founder dontations.
+    // lock in multisig contract owned by foundation that will release based on block number
+    // input to contract will be founder address and founder percent and vesting block number
+    // when block number is reached funds will be disbursed to the addresses recorded in hashmap
+
 //@todo - How do we deal with pre-allocations for advisors,etc.
-        //@todo - How do we deal with time release for pre-allocations
-//@todo - Adding a minimum for funding, returning funds if not reached.
+    // just pre-allocate a percentage of the TOKEN_SUPPLY_CAP
+
+//@todo - How do we deal with time release for pre-allocations
+    // same as above for founders
+
+//@todo - consider a deadman switch that will return remaining eth funds to all token holders
+  // in the event the foundation multisig is rendered useless.
+  // This covers disaster scenarios like several signers being
+  // unable to sign and administer the contract.
+  // There should be a period of time that allows
+  // for foundation-muiltisig to respond to the quorum vote from token holders
+  // to stop return of funds if triggered.
+
 
 /**
  * Overflow aware uint math functions.
@@ -77,8 +116,8 @@ contract Token {
     /// @return Amount of remaining tokens allowed to spent
     function allowance(address _owner, address _spender) constant returns (uint256 remaining) {}
 
-    event Transfer(address indexed _from, address indexed _to, uint256 _value);
-    event Approval(address indexed _owner, address indexed _spender, uint256 _value);
+    event TransferEvent(address indexed _from, address indexed _to, uint256 _value);
+    event ApprovalEvent(address indexed _owner, address indexed _spender, uint256 _value);
 
 }
 
@@ -101,7 +140,7 @@ contract StandardToken is Token {
         //if (balances[msg.sender] >= _value && _value > 0) {
             balances[msg.sender] -= _value;
             balances[_to] += _value;
-            Transfer(msg.sender, _to, _value);
+            TransferEvent(msg.sender, _to, _value);
             return true;
         } else { return false; }
     }
@@ -113,7 +152,7 @@ contract StandardToken is Token {
             balances[_to] += _value;
             balances[_from] -= _value;
             allowed[_from][msg.sender] -= _value;
-            Transfer(_from, _to, _value);
+            TransferEvent(_from, _to, _value);
             return true;
         } else { return false; }
     }
@@ -124,7 +163,7 @@ contract StandardToken is Token {
 
     function approve(address _spender, uint256 _value) returns (bool success) {
         allowed[msg.sender][_spender] = _value;
-        Approval(msg.sender, _spender, _value);
+        ApprovalEvent(msg.sender, _spender, _value);
         return true;
     }
 
@@ -142,17 +181,17 @@ contract StandardToken is Token {
 
 
 /**
- * Crystal token sale contract.
+ * VerityClear token sale contract.
  *
- * Security criteria evaluated against http://ethereum.stackexchange.com/questions/8551/methodological-security-review-of-a-smart-contract
+ * Original firstblood security criteria evaluated against
+ * http://ethereum.stackexchange.com/questions/8551/methodological-security-review-of-a-smart-contract
  *
  *
  */
-contract CrystalToken is StandardToken, SafeMath {
+contract VerityClearToken is StandardToken, SafeMath {
 
-    string public name = "Crystal Token";
-    //@todo - Come up with name for Crystal tokens
-    string public symbol = "CRS";
+    string public name = "Verity Clear Token";
+    string public symbol = "VRC";
     uint public decimals = 18;
     uint public startBlock; //token sale start block (set in constructor)
     uint public endBlock; //token sale end block (set in constructor)
@@ -177,16 +216,20 @@ contract CrystalToken is StandardToken, SafeMath {
     bool public bountyAllocated = false; //this will change to true when the bounty fund is allocated
     bool public ecosystemAllocated = false; //this will change to true when the ecosystem fund is allocated
     bool public founderAllocated = false; //this will change to true when the founder fund is allocated
-    uint public presaleTokenSupply = 0; //this will keep track of the token supply created during the token sale
-    uint public presaleEtherRaised = 0; //this will keep track of the Ether raised during the token sale
+    bool public buyersAllocated = false; //this will change to true when the buyers tokens are allocated
+    uint public fixedTokenSupply = 0; //this will keep track of the token supply created during the token sale
+    uint public totalFunded = 0; //this will keep track of the Ether raised during the token sale
     bool public halted = false; //the founder address can set this to true to halt the token sale due to emergency
-    event Buy(address indexed sender, uint eth, uint fbt);
+    event BuyEvent(address indexed sender, uint eth, uint fbt);
+    //@todo dead code, Withdraw event unused ?
     event Withdraw(address indexed sender, address to, uint eth);
-    event AllocateFounderTokens(address indexed sender);
+    event AllocateFounderTokensEvent(address indexed sender);
+    event AllocateBuyersTokensEvent(address indexed sender);
     event AllocateBountyAndEcosystemTokens(address indexed sender);
 
-    function CrystalToken(address founderInput, address signerInput, uint startBlockInput, uint endBlockInput) {
-        founder = founderInput;
+    //for testing a single account instead of a multisig will do
+    function VerityClearToken(address founderInputMultiSig, address signerInput, uint startBlockInput, uint endBlockInput) {
+        founder = founderInputMultiSig;
         signer = signerInput;
         startBlock = startBlockInput;
         endBlock = endBlockInput;
@@ -197,7 +240,7 @@ contract CrystalToken is StandardToken, SafeMath {
      *
      * - Integer overflow: does not apply, blocknumber can't grow that high
      * - Division is the last operation and constant, should not cause issues
-     * - Price function plotted https://github.com/Crystalio/token/issues/2
+     * - Price function plotted https://github.com/firstbloodio/token/issues/2
      */
     function price() constant returns(uint) {
         //@todo - Figure out if we want power hour.
@@ -213,7 +256,7 @@ contract CrystalToken is StandardToken, SafeMath {
         return 100 + 4*(endBlock - blockNumber)/(endBlock - startBlock + 1)*67/4; //token sale price
     }
 
-    // Buy entry point
+    // buy entry point
     function buy(uint8 v, bytes32 r, bytes32 s) {
         buyRecipient(msg.sender, v, r, s);
     }
@@ -221,7 +264,7 @@ contract CrystalToken is StandardToken, SafeMath {
     /**
      * Main token buy function.
      *
-     * Buy for the sender itself or buy on the behalf of somebody else (third party address).
+     * buy for the sender itself or buy on the behalf of somebody else (third party address).
      *
      * Security review
      *
@@ -241,19 +284,82 @@ contract CrystalToken is StandardToken, SafeMath {
     function buyRecipient(address recipient, uint8 v, bytes32 r, bytes32 s) {
         bytes32 hash = sha256(msg.sender);
         if (ecrecover(hash,v,r,s) != signer) throw;
-        if (block.number<startBlock || block.number>endBlock || safeAdd(presaleEtherRaised,msg.value)>etherCap || halted) throw;
+        if (block.number<startBlock
+          || block.number>endBlock
+          || safeAdd(totalFunded,msg.value)>etherCap
+          || halted) throw;
+
+        //under our new model, this will happen upon distribution, at end of ICO
         uint tokens = safeMul(msg.value, price());
         balances[recipient] = safeAdd(balances[recipient], tokens);
-        totalSupply = safeAdd(totalSupply, tokens);
-        presaleEtherRaised = safeAdd(presaleEtherRaised, msg.value);
+
+        //totalSupply will be fixed in our auction style buying
+        //was: totalSupply = safeAdd(totalSupply, tokens);
+
+        //this will be total funded
+        totalFunded = safeAdd(totalFunded, msg.value);
+
 
         // TODO: Is there a pitfall of forwarding message value like this
         // TODO: Different address for founder deposits and founder operations (halt, unhalt)
         // as founder opeations might be easier to perform from normal geth account
         if (!founder.call.value(msg.value)()) throw; //immediately send Ether to founder address
-
-        Buy(recipient, msg.value, tokens);
+        BuyEvent(recipient, msg.value, tokens);
     }
+
+    /**
+     * Distribute token balance for all buyers.
+     * Performed once at end of ICO / Auction
+     * allocateFounderTokens() must be calld first.
+     *
+     *  Security not reviewed
+     *   todo - review: Integer divisions are always rounded down
+     *
+     *
+     * Applicable tests:
+     *    boundries for math / division. What is precision limit ?
+     *
+     */
+    function allocateBuyersTokens() {
+        if (msg.sender!=founder) throw;
+        if (block.number <= endBlock + founderLockup) throw;
+        //if (fundedAmt < MINIMUM_FUND_CAP) throw;
+        if (buyersAllocated) throw;
+        if (!founderAllocated) throw;
+
+        // foreach buyer
+        // balances[buyer] = TOKEN_SUPPLY_CAP * ( funded[buyer] / safeAdd(totalFunded + totalGifted) );
+
+        // old example code...
+        // balances[founder] = safeAdd(balances[founder], presaleTokenSupply * founderAllocation / (1 ether));
+        // totalSupply = safeAdd(totalSupply, presaleTokenSupply * founderAllocation / (1 ether));
+        buyersAllocated = true;
+        AllocateBuyersTokensEvent(msg.sender);
+    }
+
+    function allocateFounderPercent(address recipient) {
+        if (msg.sender!=founder) throw;
+        if(block.number<startBlock) throw;
+
+    }
+
+    function allocateFounderTokens() {
+        if (msg.sender!=founder) throw;
+        if (block.number <= endBlock + founderLockup) throw;
+        //if (fundedAmt < MINIMUM_FUND_CAP) throw;
+        if (!buyersAllocated) throw;
+        if (!founderAllocated) throw;
+
+        // foreach founder
+        // balances[founder] = TOKEN_SUPPLY_CAP * ( (totalGifted * founderPercents[founder]) / safeAdd(totalFunded + totalGifted) );
+
+        // old example code...
+        // balances[founder] = safeAdd(balances[founder], presaleTokenSupply * founderAllocation / (1 ether));
+        // totalSupply = safeAdd(totalSupply, presaleTokenSupply * founderAllocation / (1 ether));
+        founderAllocated = true;
+        AllocateFounderTokensEvent(msg.sender);
+    }
+
 
     /**
      * Set up founder address token balance.
@@ -269,17 +375,19 @@ contract CrystalToken is StandardToken, SafeMath {
      * - Test bounty and ecosystem allocation
      * - Test bounty and ecosystem allocation twice
      *
-     */
+     *
     function allocateFounderTokens() {
         if (msg.sender!=founder) throw;
         if (block.number <= endBlock + founderLockup) throw;
+        //if (fundedAmt < MINIMUM_FUND_CAP) throw;
         if (founderAllocated) throw;
         if (!bountyAllocated || !ecosystemAllocated) throw;
         balances[founder] = safeAdd(balances[founder], presaleTokenSupply * founderAllocation / (1 ether));
         totalSupply = safeAdd(totalSupply, presaleTokenSupply * founderAllocation / (1 ether));
         founderAllocated = true;
-        AllocateFounderTokens(msg.sender);
+        AllocateFounderTokensEvent(msg.sender);
     }
+    */
 
 /* Bounty and Ecosystem Tokens - @todo Should we delete this? */
     /**
@@ -298,9 +406,11 @@ contract CrystalToken is StandardToken, SafeMath {
      * - Test founder token allocation twice
      *
      */
+/* Deals with non-fixed supply, needs to change
     function allocateBountyAndEcosystemTokens() {
         if (msg.sender!=founder) throw;
         if (block.number <= endBlock) throw;
+        //if (fundedAmt < MINIMUM_FUND_CAP) throw;
         if (bountyAllocated || ecosystemAllocated) throw;
         presaleTokenSupply = totalSupply;
         balances[founder] = safeAdd(balances[founder], presaleTokenSupply * ecosystemAllocation / (1 ether));
@@ -311,6 +421,7 @@ contract CrystalToken is StandardToken, SafeMath {
         ecosystemAllocated = true;
         AllocateBountyAndEcosystemTokens(msg.sender);
     }
+*/
 
 /*Contract Escape Hatch*/
     /**
