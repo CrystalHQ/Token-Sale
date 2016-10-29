@@ -196,10 +196,10 @@ contract VerityClearToken is StandardToken, SafeMath {
     uint public startBlock; //token sale start block (set in constructor)
     uint public endBlock; //token sale end block (set in constructor)
 
-    // Initial founder address (set in constructor)
+    // Initial foundation multisig address (set in constructor)
     // All deposited ETH will be instantly forwarded to this address.
     // Address is a multisig wallet.
-    address public founder = 0x0;
+    address public foundation = 0x0;
 
     // signer address (for clickwrap agreement)
     // see function() {} for comments
@@ -209,17 +209,12 @@ contract VerityClearToken is StandardToken, SafeMath {
     uint public etherCap = 500000 * 10**18; //max amount raised during token sale (5.5M USD worth of ether will be measured with market price at beginning of the token sale)
     uint public transferLockup = 370285; //transfers are locked for this many blocks after endBlock (assuming 14 second blocks, this is 2 months)
     uint public founderLockup = 2252571; //founder allocation cannot be created until this many blocks after endBlock (assuming 14 second blocks, this is 1 year)
-    //@todo - Remove bounty code
-    uint public bountyAllocation = 2500000 * 10**18; //2.5M tokens allocated post-token sale for the bounty fund
-    uint public ecosystemAllocation = 5 * 10**16; //5% of token supply allocated post-token sale for the ecosystem fund
     uint public founderAllocation = 10 * 10**16; //10% of token supply allocated post-token sale for the founder allocation
-    bool public bountyAllocated = false; //this will change to true when the bounty fund is allocated
-    bool public ecosystemAllocated = false; //this will change to true when the ecosystem fund is allocated
     bool public founderAllocated = false; //this will change to true when the founder fund is allocated
     bool public buyersAllocated = false; //this will change to true when the buyers tokens are allocated
     uint public fixedTokenSupply = 0; //this will keep track of the token supply created during the token sale
     uint public totalFunded = 0; //this will keep track of the Ether raised during the token sale
-    bool public halted = false; //the founder address can set this to true to halt the token sale due to emergency
+    bool public halted = false; //the foundation address can set this to true to halt the token sale due to emergency
     event BuyEvent(address indexed sender, uint eth, uint fbt);
     //@todo dead code, Withdraw event unused ?
     event Withdraw(address indexed sender, address to, uint eth);
@@ -228,8 +223,8 @@ contract VerityClearToken is StandardToken, SafeMath {
     event AllocateBountyAndEcosystemTokens(address indexed sender);
 
     //for testing a single account instead of a multisig will do
-    function VerityClearToken(address founderInputMultiSig, address signerInput, uint startBlockInput, uint endBlockInput) {
-        founder = founderInputMultiSig;
+    function VerityClearToken(address foundationInputMultiSig, address signerInput, uint startBlockInput, uint endBlockInput) {
+        foundation = foundationInputMultiSig;
         signer = signerInput;
         startBlock = startBlockInput;
         endBlock = endBlockInput;
@@ -321,7 +316,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      *
      */
     function allocateBuyersTokens() {
-        if (msg.sender!=founder) throw;
+        if (msg.sender!=foundation) throw;
         if (block.number <= endBlock + founderLockup) throw;
         //if (fundedAmt < MINIMUM_FUND_CAP) throw;
         if (buyersAllocated) throw;
@@ -337,14 +332,14 @@ contract VerityClearToken is StandardToken, SafeMath {
         AllocateBuyersTokensEvent(msg.sender);
     }
 
-    function allocateFounderPercent(address recipient) {
-        if (msg.sender!=founder) throw;
+    function allocateFounderPercent(address recipient, uint percent) {
+        if(msg.sender!=foundation) throw;
         if(block.number<startBlock) throw;
-
+        if(percent + percentOthers > 100) throw;
     }
 
     function allocateFounderTokens() {
-        if (msg.sender!=founder) throw;
+        if (msg.sender!=foundation) throw;
         if (block.number <= endBlock + founderLockup) throw;
         //if (fundedAmt < MINIMUM_FUND_CAP) throw;
         if (!buyersAllocated) throw;
@@ -360,69 +355,6 @@ contract VerityClearToken is StandardToken, SafeMath {
         AllocateFounderTokensEvent(msg.sender);
     }
 
-
-    /**
-     * Set up founder address token balance.
-     *
-     * allocateBountyAndEcosystemTokens() must be calld first.
-     *
-     * Security review
-     *
-     * - Integer math: ok - only called once with fixed parameters
-     *
-     * Applicable tests:
-     *
-     * - Test bounty and ecosystem allocation
-     * - Test bounty and ecosystem allocation twice
-     *
-     *
-    function allocateFounderTokens() {
-        if (msg.sender!=founder) throw;
-        if (block.number <= endBlock + founderLockup) throw;
-        //if (fundedAmt < MINIMUM_FUND_CAP) throw;
-        if (founderAllocated) throw;
-        if (!bountyAllocated || !ecosystemAllocated) throw;
-        balances[founder] = safeAdd(balances[founder], presaleTokenSupply * founderAllocation / (1 ether));
-        totalSupply = safeAdd(totalSupply, presaleTokenSupply * founderAllocation / (1 ether));
-        founderAllocated = true;
-        AllocateFounderTokensEvent(msg.sender);
-    }
-    */
-
-/* Bounty and Ecosystem Tokens - @todo Should we delete this? */
-    /**
-     * Set up founder address token balance.
-     *
-     * Set up bounty pool.
-     *
-     * Security review
-     *
-     * - Integer math: ok - only called once with fixed parameters
-     *
-     * Applicable tests:
-     *
-     * - Test founder token allocation too early
-     * - Test founder token allocation on time
-     * - Test founder token allocation twice
-     *
-     */
-/* Deals with non-fixed supply, needs to change
-    function allocateBountyAndEcosystemTokens() {
-        if (msg.sender!=founder) throw;
-        if (block.number <= endBlock) throw;
-        //if (fundedAmt < MINIMUM_FUND_CAP) throw;
-        if (bountyAllocated || ecosystemAllocated) throw;
-        presaleTokenSupply = totalSupply;
-        balances[founder] = safeAdd(balances[founder], presaleTokenSupply * ecosystemAllocation / (1 ether));
-        totalSupply = safeAdd(totalSupply, presaleTokenSupply * ecosystemAllocation / (1 ether));
-        balances[founder] = safeAdd(balances[founder], bountyAllocation);
-        totalSupply = safeAdd(totalSupply, bountyAllocation);
-        bountyAllocated = true;
-        ecosystemAllocated = true;
-        AllocateBountyAndEcosystemTokens(msg.sender);
-    }
-*/
-
 /*Contract Escape Hatch*/
     /**
      * Emergency Stop ICO.
@@ -432,12 +364,12 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Test unhalting, buying, and succeeding
      */
     function halt() {
-        if (msg.sender!=founder) throw;
+        if (msg.sender!=foundation) throw;
         halted = true;
     }
 
     function unhalt() {
-        if (msg.sender!=founder) throw;
+        if (msg.sender!=foundation) throw;
         halted = false;
     }
 
@@ -451,7 +383,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Test founder token allocation twice
      *
     function changeFounder(address newFounder) {
-        if (msg.sender!=founder) throw;
+        if (msg.sender!=foundation) throw;
         founder = newFounder;
     }
 
@@ -466,7 +398,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Test transfer after restricted period
      */
     function transfer(address _to, uint256 _value) returns (bool success) {
-        if (block.number <= endBlock + transferLockup && msg.sender!=founder) throw;
+        if (block.number <= endBlock + transferLockup && msg.sender!=foundation) throw;
         return super.transfer(_to, _value);
     }
     /**
@@ -475,7 +407,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      * Prevent transfers until freeze period is over.
      */
     function transferFrom(address _from, address _to, uint256 _value) returns (bool success) {
-        if (block.number <= endBlock + transferLockup && msg.sender!=founder) throw;
+        if (block.number <= endBlock + transferLockup && msg.sender!=foundation) throw;
         return super.transferFrom(_from, _to, _value);
     }
 
