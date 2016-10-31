@@ -1,3 +1,5 @@
+pragma solidity ^0.4.0;
+
 /* Forked From https://github.com/FirstBloodio/token
 
 This is the VerityClear token and token sale contract. This will handle all backend aspects of our token sale.
@@ -29,155 +31,19 @@ per best practices enumerated here: https://github.com/ConsenSys/smart-contract-
   // issuing tokens to founders at the close based on the 'gift ether'.
 
 //@todo - How do we deal with timed release for founder dontations.
-    // lock in multisig contract owned by foundation that will release based on block number
-    // input to contract will be founder address and founder percent and vesting block number
-    // when block number is reached funds will be disbursed to the addresses recorded in hashmap
+    // time lock that will release based on block number (estimated at x sec per block)
+    // input to contract function will be founder address. Test will be for vesting block number.
+    // after block number is reached funds can be disbursed to the addresses, calulated by founder percents
 
 //@todo - How do we deal with pre-allocations for advisors,etc.
-    // just pre-allocate a percentage of the TOKEN_SUPPLY_CAP
+    // pre-allocate a percentage of the TOKEN_SUPPLY_CAP by issuing 'fake ether'
 
 //@todo - How do we deal with time release for pre-allocations
     // same as above for founders
 
-//@todo - consider a deadman switch that will return remaining eth funds to all token holders
-  // in the event the foundation multisig is rendered useless.
-  // This covers disaster scenarios like several signers being
-  // unable to sign and administer the contract.
-  // There should be a period of time that allows
-  // for foundation-muiltisig to respond to the quorum vote from token holders
-  // to stop return of funds if triggered.
 
 
-/**
- * Overflow aware uint math functions.
- *
- * Inspired by https://github.com/MakerDAO/maker-otc/blob/master/contracts/simple_market.sol
- */
-contract SafeMath {
-  //internals
 
-  function safeMul(uint a, uint b) internal returns (uint) {
-    uint c = a * b;
-    assert(a == 0 || c / a == b);
-    return c;
-  }
-
-  function safeSub(uint a, uint b) internal returns (uint) {
-    assert(b <= a);
-    return a - b;
-  }
-
-  function safeAdd(uint a, uint b) internal returns (uint) {
-    uint c = a + b;
-    assert(c>=a && c>=b);
-    return c;
-  }
-
-  function assert(bool assertion) internal {
-    if (!assertion) throw;
-  }
-}
-
-/**
- * ERC 20 token
- *
- * https://github.com/ethereum/EIPs/issues/20
- */
-contract Token {
-
-    /// @return total amount of tokens
-    function totalSupply() constant returns (uint256 supply) {}
-
-    /// @param _owner The address from which the balance will be retrieved
-    /// @return The balance
-    function balanceOf(address _owner) constant returns (uint256 balance) {}
-
-    /// @notice send `_value` token to `_to` from `msg.sender`
-    /// @param _to The address of the recipient
-    /// @param _value The amount of token to be transferred
-    /// @return Whether the transfer was successful or not
-    function transfer(address _to, uint256 _value) returns (bool success) {}
-
-    /// @notice send `_value` token to `_to` from `_from` on the condition it is approved by `_from`
-    /// @param _from The address of the sender
-    /// @param _to The address of the recipient
-    /// @param _value The amount of token to be transferred
-    /// @return Whether the transfer was successful or not
-    function transferFrom(address _from, address _to, uint256 _value) returns (bool success) {}
-
-    /// @notice `msg.sender` approves `_addr` to spend `_value` tokens
-    /// @param _spender The address of the account able to transfer the tokens
-    /// @param _value The amount of wei to be approved for transfer
-    /// @return Whether the approval was successful or not
-    function approve(address _spender, uint256 _value) returns (bool success) {}
-
-    /// @param _owner The address of the account owning tokens
-    /// @param _spender The address of the account able to transfer the tokens
-    /// @return Amount of remaining tokens allowed to spent
-    function allowance(address _owner, address _spender) constant returns (uint256 remaining) {}
-
-    event TransferEvent(address indexed _from, address indexed _to, uint256 _value);
-    event ApprovalEvent(address indexed _owner, address indexed _spender, uint256 _value);
-
-}
-
-/**
- * ERC 20 token
- *
- * https://github.com/ethereum/EIPs/issues/20
- */
-contract StandardToken is Token {
-
-    /**
-     * Reviewed:
-     * - Interger overflow = OK, checked
-     */
-    function transfer(address _to, uint256 _value) returns (bool success) {
-        //Default assumes totalSupply can't be over max (2^256 - 1).
-        //If your token leaves out totalSupply and can issue more tokens as time goes on, you need to check if it doesn't wrap.
-        //Replace the if with this one instead.
-        if (balances[msg.sender] >= _value && balances[_to] + _value > balances[_to]) {
-        //if (balances[msg.sender] >= _value && _value > 0) {
-            balances[msg.sender] -= _value;
-            balances[_to] += _value;
-            TransferEvent(msg.sender, _to, _value);
-            return true;
-        } else { return false; }
-    }
-
-    function transferFrom(address _from, address _to, uint256 _value) returns (bool success) {
-        //same as above. Replace this line with the following if you want to protect against wrapping uints.
-        if (balances[_from] >= _value && allowed[_from][msg.sender] >= _value && balances[_to] + _value > balances[_to]) {
-        //if (balances[_from] >= _value && allowed[_from][msg.sender] >= _value && _value > 0) {
-            balances[_to] += _value;
-            balances[_from] -= _value;
-            allowed[_from][msg.sender] -= _value;
-            TransferEvent(_from, _to, _value);
-            return true;
-        } else { return false; }
-    }
-
-    function balanceOf(address _owner) constant returns (uint256 balance) {
-        return balances[_owner];
-    }
-
-    function approve(address _spender, uint256 _value) returns (bool success) {
-        allowed[msg.sender][_spender] = _value;
-        ApprovalEvent(msg.sender, _spender, _value);
-        return true;
-    }
-
-    function allowance(address _owner, address _spender) constant returns (uint256 remaining) {
-      return allowed[_owner][_spender];
-    }
-
-    mapping(address => uint256) balances;
-
-    mapping (address => mapping (address => uint256)) allowed;
-
-    uint256 public totalSupply;
-
-}
 
 
 /**
@@ -196,12 +62,12 @@ contract VerityClearToken is StandardToken, SafeMath {
     uint public startBlock; //token sale start block (set in constructor)
     uint public endBlock; //token sale end block (set in constructor)
 
-    // Initial foundation multisig address (set in constructor)
+    // Initial owner Multisig address (set in constructor)
     // All deposited ETH will be instantly forwarded to this address.
-    // Address is a multisig wallet.
-    address public foundation = 0x0;
+    // Address is a multisig contract such as ds-multisig https://github.com/nexusdev/ds-multisig.
+    address public ownerMultisig = 0x0;
 
-    // signer address (for clickwrap agreement)
+    // signer address (for crowdsale agreement)
     // see function() {} for comments
     address public signer = 0x0;
 
@@ -213,7 +79,8 @@ contract VerityClearToken is StandardToken, SafeMath {
     bool public founderDistributed = false; //this will change to true when the founder tokens are distributed
     bool public buyersDistributed = false; //this will change to true when the buyers tokens are distributed
     uint public totalFunded = 0; //this will keep track of the Ether raised during the token sale
-    bool public halted = false; //the foundation address can set this to true to halt the token sale due to emergency
+    uint public totalFounderPool = 0; //matching funds to founders
+    bool public halted = false; //the ownerMultisig address can set this to true to halt the token sale due to emergency
 
 
     //@todo  ok to store percent in uint? how do we get precision we need?
@@ -224,11 +91,11 @@ contract VerityClearToken is StandardToken, SafeMath {
     event Withdraw(address indexed sender, address to, uint eth);
     event DistributeFounderTokensEvent(address indexed sender);
     event DistributeBuyersTokensEvent(address indexed sender);
-    event SetFounderPercentEvent(address indexed sender);
+    event SetFounderDistributionPercentEvent(address indexed sender);
 
-    //for testing - a single account instead of a multisig will do
+    //when testing a single account instead of a multisig will do
     function VerityClearToken(address foundationInputMultiSig, address signerInput, uint startBlockInput, uint endBlockInput) {
-        foundation = foundationInputMultiSig;
+        ownerMultisig = foundationInputMultiSig;
         signer = signerInput;
         startBlock = startBlockInput;
         endBlock = endBlockInput;
@@ -290,11 +157,12 @@ contract VerityClearToken is StandardToken, SafeMath {
           || halted) throw;
 
         //under our new model, this will happen upon distribution, at end of ICO
-        uint tokens = safeMul(msg.value, discount());
+        private uint tokens = safeMul(msg.value, discount());
         balances[recipient] = safeAdd(balances[recipient], tokens);
 
         //totalSupply will be fixed in our auction style buying
         //was: totalSupply = safeAdd(totalSupply, tokens);
+        // for now we just track eth received until final distribution of tokens
 
         //this will be total funded
         totalFunded = safeAdd(totalFunded, msg.value);
@@ -302,7 +170,7 @@ contract VerityClearToken is StandardToken, SafeMath {
         // TODO: Is there a pitfall of forwarding message value like this
         // TODO: Different address for founder deposits and founder operations (halt, unhalt)
         // as founder opeations might be easier to perform from normal geth account
-        if (!founder.call.value(msg.value)()) throw; //immediately send Ether to founder address
+        if (!ownerMultisig.send.value(msg.value)()) throw; //immediately send Ether to founder address
         BuyEvent(recipient, msg.value, tokens);
     }
 
@@ -320,7 +188,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      *
      */
     function distributeBuyersTokens() {
-        if (msg.sender!=foundation) throw;
+        if (msg.sender!=ownerMultisig) throw;
         if (block.number <= endBlock + founderLockup) throw;
         //if (fundedAmt < MINIMUM_FUND_CAP) throw;
         if (buyersDistributed) throw;
@@ -336,19 +204,19 @@ contract VerityClearToken is StandardToken, SafeMath {
         DistributeBuyersTokensEvent(msg.sender);
     }
 
-    function setFounderPercent(address founder, uint percent) {
-        if(msg.sender!=foundation) throw;
+    function setFounderDistributionPercent(address founder, uint percent) {
+        if(msg.sender!=ownerMultisig) throw;
         if(block.number<startBlock) throw;
         if(percent + percentOthers > 100) throw;
         founderPercents[founder] = percent;
         percentOthers = percentOthers + percent;
-        SetFounderPercentEvent(msg.sender);
+        SetFounderDistributionPercentEvent(msg.sender);
     }
 
 
     function distributeFounderTokens() {
-        uint percentTotal;
-        if (msg.sender!=foundation) throw;
+        private uint percentTotal;
+        if (msg.sender!=ownerMultisig) throw;
         if (block.number <= endBlock + founderLockup) throw;
         //if (fundedAmt < MINIMUM_FUND_CAP) throw;
         if (!buyersDistributed) throw;
@@ -377,12 +245,12 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Test unhalting, buying, and succeeding
      */
     function halt() {
-        if (msg.sender!=foundation) throw;
+        if (msg.sender!=ownerMultisig) throw;
         halted = true;
     }
 
     function unhalt() {
-        if (msg.sender!=foundation) throw;
+        if (msg.sender!=ownerMultisig) throw;
         halted = false;
     }
 
@@ -395,9 +263,9 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Test founder change
      * - Test founder token allocation twice
      */
-    function changeFounder(address newFounder) {
-        if (msg.sender!=foundation) throw;
-        founder = newFounder;
+    function changeOwnerMultisig(address newMultisigAddress) {
+        if (msg.sender!=ownerMultisig) throw;
+        ownerMultisig = newMultisigAddress;
     }
 
     /**
@@ -411,7 +279,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      * - Test transfer after restricted period
      */
     function transfer(address _to, uint256 _value) returns (bool success) {
-        if (block.number <= endBlock + transferLockup && msg.sender!=foundation) throw;
+        if (block.number <= endBlock + transferLockup && msg.sender!=ownerMultisig) throw;
         return super.transfer(_to, _value);
     }
     /**
@@ -420,7 +288,7 @@ contract VerityClearToken is StandardToken, SafeMath {
      * Prevent transfers until freeze period is over.
      */
     function transferFrom(address _from, address _to, uint256 _value) returns (bool success) {
-        if (block.number <= endBlock + transferLockup && msg.sender!=foundation) throw;
+        if (block.number <= endBlock + transferLockup && msg.sender!=ownerMultisig) throw;
         return super.transferFrom(_from, _to, _value);
     }
 
@@ -439,5 +307,4 @@ contract VerityClearToken is StandardToken, SafeMath {
     function() {
         throw;
     }
-
 }
